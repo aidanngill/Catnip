@@ -155,7 +155,17 @@ class Manager:
 
             contours = blur.contours(self.average_frame)
 
-            if len(contours) > 0 and self.event is None:
+            if self.event:
+                if self.event.should_update_trigger(self.recording_length):
+                    if not self.event.trigger.is_similar(blur):
+                        self.event.update_trigger(blur)
+                        continue
+
+                    self._add_combine(self.event)
+                    self._update_average_frame(blur)
+
+                    self.event = None
+            elif len(contours) > 0:
                 self.event = Event(blur)
                 log.info("Started recording a motion event.")
 
@@ -175,41 +185,23 @@ class Manager:
         lock should be acquired.
         """
         while not self.exit_event.is_set():
-            frame: Frame = self.camera.capture().copy()
+            frame: Frame = self.camera.capture()
 
             with self.latest_frame_lock:
                 self.latest_frame = frame
 
-            resized: Frame = frame.resize(frame.width // 4)
-            grey: Frame = resized.recolor(cv2.COLOR_BGR2GRAY)
-            blur: Frame = grey.blur()
-
             if self.average_frame is None:
-                self._update_average_frame(blur)
-                continue
+                resized: Frame = frame.resize(frame.width // 4)
+                grey: Frame = resized.recolor(cv2.COLOR_BGR2GRAY)
+                blur: Frame = grey.blur()
 
-            if self.event is None:
-                continue
-
-            # Still recording, so keep adding frames.
-            self.event.add_frame(frame)
-
-            if self.event.trigger is None:
-                continue
-
-            # If the frame trigger is similar to what it was 5 seconds ago,
-            # update the global average blur. Otherwise update the current
-            # event's frame trigger, so that we can compare the next time
-            # around.
-            if self.event.should_update_trigger(self.recording_length):
-                if not self.event.trigger.is_similar(blur):
-                    self.event.update_trigger(blur)
-                    continue
-
-                self._add_combine(self.event)
                 self._update_average_frame(blur)
 
-                self.event = None
+                continue
+
+            if self.event is not None:
+                self.event.add_frame(frame)
+
 
     def run(self) -> None:
         """
