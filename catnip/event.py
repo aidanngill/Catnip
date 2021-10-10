@@ -4,7 +4,8 @@ import os
 import time
 from datetime import datetime
 
-from . import config
+import cv2
+
 from .camera import Frame
 
 
@@ -24,15 +25,14 @@ class Event:
     updated : float
         when the trigger frame was last updated.
 
-    path : str
-        unique path to save frames to.
-
-    path_index : int
-        current amount of frames. each file will be saved sequentially with this
-        index number as its file name.
+    file : str
+        the file to save the video to.
+    
+    writer : cv2.VideoWriter
+        cv2 video writer object to process frames into video.
     """
 
-    def __init__(self, trigger: Frame):
+    def __init__(self, trigger: Frame, path: str, width: int, height: int, fps: int):
         """
         Parameters
         ----------
@@ -44,21 +44,13 @@ class Event:
         self.start: datetime = datetime.now()
         self.updated: float = time.time()
 
-        self.path: str = os.path.join(
-            config.CAPTURE_PATH,
-            str(self.start.year),
-            str(self.start.month),
-            str(self.start.day)
-        )
+        self.file = os.path.join(path, self.start.strftime("%H%M%S_%f.avi"))
 
-        if not os.path.isdir(self.path):
-            os.makedirs(self.path, exist_ok=True)
+        if not os.path.isfile(path):
+            os.makedirs(path, exist_ok=True)
 
-        self.path_index: int = 0
-    
-    @property
-    def file_path(self) -> os.PathLike:
-        return os.path.join(self.path, self.start.strftime("%H%M%S_%f.avi"))
+        cc = cv2.VideoWriter_fourcc(*"mp4v")
+        self.writer = cv2.VideoWriter(self.file, cc, fps, (width, height))
 
     def should_update_trigger(self, delta: int = 10) -> bool:
         """
@@ -78,17 +70,14 @@ class Event:
 
     def add_frame(self, frame: Frame) -> None:
         """
-        Save a frame to the event's unique path and update the file index.
+        Save a frame to the event's video writer.
 
         Parameters
         ----------
         frame : catnip.Frame
             frame to save to get the image from.
         """
-        file = os.path.join(self.path, f"{self.path_index}.png")
-        frame.write(file, [datetime.now().strftime("%d %B %Y at %H:%M:%S")])
-
-        self.path_index += 1
+        self.writer.write(frame.data)
 
     def update_trigger(self, frame: Frame) -> None:
         """

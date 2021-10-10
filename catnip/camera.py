@@ -286,6 +286,20 @@ class Camera(cv2.VideoCapture):
         How many (f)rames the device outputs (p)er (s)econd.
         """
         return super().get(cv2.CAP_PROP_FPS)
+    
+    @property
+    def width(self) -> int:
+        """
+        Width of the frame in pixels.
+        """
+        return int(super().get(cv2.CAP_PROP_FRAME_WIDTH))
+    
+    @property
+    def height(self) -> int:
+        """
+        Height of the frame in pixels.
+        """
+        return int(super().get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     def exposure(self, enable: bool) -> None:
         """

@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+from os import PathLike
 import sys
 
 from . import Manager
@@ -51,6 +52,14 @@ def parse_arguments():
         help="Time to wait between processing frames.",
     )
 
+    parser.add_argument(
+        "-p",
+        "--path",
+        type=PathLike,
+        default=None,
+        help="Path to save captured video to."
+    )
+
     # Boolean values.
     parser.add_argument(
         "--disable-exposure",
@@ -67,8 +76,9 @@ if __name__ == "__main__":
 
     manager = Manager(
         device_id=opts.device_id,
+        output_path=opts.path,
         recording_length=opts.recording_length,
-        detection_wait=opts.detection_wait
+        detection_wait=opts.detection_wait,
     )
 
     manager.camera.exposure(enable=(not opts.disable_exposure))

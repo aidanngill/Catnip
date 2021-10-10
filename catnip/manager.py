@@ -2,12 +2,10 @@
 
 import logging
 import os
-import pathlib
-import shutil
 import signal
 import threading
 import time
-from queue import Empty, Queue
+from datetime import datetime
 
 import cv2
 
@@ -48,15 +46,13 @@ class Manager:
     average_frame : catnip.Frame
         the average to base comparisons with newer frames on.
 
-    combine_queue : queue.Queue
-        queue for folders with frames to be combined into videos.
-
     event : catnip.Event
         current motion event.
     """
 
     def __init__(self,
                  device_id: int = 0,
+                 output_path: os.PathLike = None,
                  recording_length: float = 5.0,
                  detection_wait: float = 1.0
                  ):
@@ -73,6 +69,7 @@ class Manager:
             how long to wait between detection cycles.
         """
         self.device_id = device_id
+        self.path = output_path if output_path else util.get_default_directory()
         self.recording_length = recording_length
         self.detection_wait = detection_wait
 
@@ -86,21 +83,8 @@ class Manager:
         self.average_frame: Frame = None
         self.average_frame_lock = threading.Lock()
 
-        self.combine_queue = Queue()
-
         self.event: Event = None
         self.callback_functions: dict = {}
-
-    def _add_combine(self, event: Event) -> None:
-        """
-        Add a path from an event to the combine queue.
-
-        Parameters
-        ----------
-        event : catnip.Event
-            event to add the path from.
-        """
-        self.combine_queue.put((event.path, event.file_path))
 
     def _update_average_frame(self, frame: Frame) -> None:
         """
@@ -116,7 +100,34 @@ class Manager:
 
         log.debug("Updated the average frame.")
     
+    def _create_event(self, frame: Frame) -> Event:
+        """
+        Start a new motion event.
+
+        Parameters
+        ----------
+        frame : catnip.Frame
+            the frame that set off the motion event.
+        
+        Returns
+        -------
+        catnip.Event
+            newly created event.
+        """
+        now = datetime.now()
+        path = os.path.join(self.path, str(now.year), str(now.month), str(now.day))
+
+        return Event(frame, path, self.camera.width, self.camera.height, self.camera.fps)
+    
     def _do_callback(self, name: str, *args, **kwargs):
+        """
+        Call the function given by the callback name with its parameters.
+        
+        Parameters
+        ----------
+        name : str
+            the name of the callback.
+        """
         func = self.callback_functions.get(name)
 
         if func is None:
@@ -125,27 +136,18 @@ class Manager:
         func(*args, **kwargs)
     
     def on(self, name: str) -> None:
-        def _on(func, *_):
+        """
+        Register a callback function.
+        
+        Parameters
+        ----------
+        name : str
+            the name of the callback.
+        """
+        def _on(func, *_, **__):
             self.callback_functions[name] = func
+
         return _on
-
-    def combine(self) -> None:
-        """
-        Combine the images from every event's path in the queue into a video.
-        """
-        while not self.exit_event.is_set():
-            try:
-                path, file = self.combine_queue.get(False, 0.5)
-            except Empty:
-                continue
-
-            util.combine_images_to_video(
-                path,
-                file,
-                frames_per_second=self.camera.fps
-            )
-
-            log.info(f"Combined output images to '{file}'")
 
     def detect(self) -> None:
         """ Process the latest frame to check for any movement. """
@@ -173,14 +175,16 @@ class Manager:
                         self.event.update_trigger(blur)
                         continue
 
-                    self._add_combine(self.event)
-                    self._do_callback("event_end", self.event)
+                    self.event.writer.release()
 
+                    self._do_callback("event_end", self.event)
                     self._update_average_frame(blur)
 
+                    log.info("Finished recording a motion event.")
                     self.event = None
+
             elif len(contours) > 0:
-                self.event = Event(blur)
+                self.event = self._create_event(blur)
                 self._do_callback("event_start", self.event)
 
                 log.info("Started recording a motion event.")
@@ -215,15 +219,16 @@ class Manager:
 
                 continue
 
-            if self.event is not None:
-                self.event.add_frame(frame)
+            if self.event is None:
+                continue
 
+            self.event.add_frame(frame)
 
     def run(self) -> None:
         """
         Start all of the manager's required functions as threads.
         """
-        targets = [self.record, self.detect, self.combine]
+        targets = [self.record, self.detect]
 
         def signal_handler(*_, **__):
             log.warning("Received a keyboard interrupt, shutting down...")
