@@ -154,3 +154,6 @@ captures/
 *.png
 *.avi
 *.mp4
+
+# Configuration
+config.json

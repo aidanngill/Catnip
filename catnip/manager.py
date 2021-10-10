@@ -1,6 +1,8 @@
 """ A manager for the camera device to process the frames for motion events. """
 
 import logging
+import os
+import pathlib
 import shutil
 import signal
 import threading
@@ -87,6 +89,7 @@ class Manager:
         self.combine_queue = Queue()
 
         self.event: Event = None
+        self.callback_functions: dict = {}
 
     def _add_combine(self, event: Event) -> None:
         """
@@ -97,7 +100,7 @@ class Manager:
         event : catnip.Event
             event to add the path from.
         """
-        self.combine_queue.put(event.path)
+        self.combine_queue.put((event.path, event.file_path))
 
     def _update_average_frame(self, frame: Frame) -> None:
         """
@@ -112,6 +115,19 @@ class Manager:
             self.average_frame = frame
 
         log.debug("Updated the average frame.")
+    
+    def _do_callback(self, name: str, *args, **kwargs):
+        func = self.callback_functions.get(name)
+
+        if func is None:
+            return
+        
+        func(*args, **kwargs)
+    
+    def on(self, name: str) -> None:
+        def _on(func, *_):
+            self.callback_functions[name] = func
+        return _on
 
     def combine(self) -> None:
         """
@@ -119,11 +135,9 @@ class Manager:
         """
         while not self.exit_event.is_set():
             try:
-                path = self.combine_queue.get(False, 0.5)
+                path, file = self.combine_queue.get(False, 0.5)
             except Empty:
                 continue
-
-            file = path.split("/")[-1] + ".avi"
 
             util.combine_images_to_video(
                 path,
@@ -132,8 +146,6 @@ class Manager:
             )
 
             log.info(f"Combined output images to '{file}'")
-
-            shutil.rmtree(path)
 
     def detect(self) -> None:
         """ Process the latest frame to check for any movement. """
@@ -162,11 +174,15 @@ class Manager:
                         continue
 
                     self._add_combine(self.event)
+                    self._do_callback("event_end", self.event)
+
                     self._update_average_frame(blur)
 
                     self.event = None
             elif len(contours) > 0:
                 self.event = Event(blur)
+                self._do_callback("event_start", self.event)
+
                 log.info("Started recording a motion event.")
 
             end = time.time()

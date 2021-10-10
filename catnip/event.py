@@ -4,7 +4,7 @@ import os
 import time
 from datetime import datetime
 
-from . import config, util
+from . import config
 from .camera import Frame
 
 
@@ -40,10 +40,25 @@ class Event:
             initial frame that triggered the motion event.
         """
         self.trigger: Frame = trigger
+
+        self.start: datetime = datetime.now()
         self.updated: float = time.time()
 
-        self.path: str = util.generate_unique_folder(config.CAPTURE_PATH)
+        self.path: str = os.path.join(
+            config.CAPTURE_PATH,
+            str(self.start.year),
+            str(self.start.month),
+            str(self.start.day)
+        )
+
+        if not os.path.isdir(self.path):
+            os.makedirs(self.path, exist_ok=True)
+
         self.path_index: int = 0
+    
+    @property
+    def file_path(self) -> os.PathLike:
+        return os.path.join(self.path, self.start.strftime("%H%M%S_%f.avi"))
 
     def should_update_trigger(self, delta: int = 10) -> bool:
         """

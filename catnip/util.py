@@ -51,7 +51,10 @@ def combine_images_to_video(
                             frames_per_second, (width, height))
 
     for file in files:
-        video.write(cv2.imread(os.path.join(path, file)))
+        frame_file = os.path.join(path, file)
+
+        video.write(cv2.imread(frame_file))
+        os.remove(frame_file)
 
     video.release()
 
