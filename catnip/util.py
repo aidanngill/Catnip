@@ -1,14 +1,19 @@
 """ Any utility functions for paths, images, etc. """
 
 import os
+import platform
 
 def get_default_directory():
-    if os.name == "nt":
+    system = platform.system()
+
+    if system == "Windows":
         path = os.path.join(os.getenv("APPDATA"), "Catnip")
-    elif os.name in {"linux", "linux2"}:
+    elif system == "Linux":
         path = os.path.join(os.sep, "var", "lib", "catnip")
-    elif os.name in "darwin":
+    elif system == "Darwin":
         path = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Catnip")
+    else:
+        path = os.path.join(os.getcwd(), "appdata")
     
     if not os.path.isdir(path):
         os.makedirs(path, exist_ok=True)
